@@ -183,6 +183,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if account.IsOpenCodeGo() && IsOpenCodeUnsupportedModel(routingModel) {
 		return nil, writeOpenCodeUnsupportedModelError(c, false, routingModel)
 	}
+	// grok-* on an OpenAI API-key account always leaves via Chat Completions,
+	// including force_responses. PlatformGrok already returned above.
+	if shouldForceGrokAPIKeyChat(account, originalModel, "") {
+		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
+		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body, startTime)
+	}
 	switch s.resolveUpstreamProtocolFor(ctx, account, APIProtocolResponses, routingModel) {
 	case APIProtocolAnthropic:
 		// Responses 客户端 × Anthropic 上游：转成 Anthropic 请求走原生端点。不能落到

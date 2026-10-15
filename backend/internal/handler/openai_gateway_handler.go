@@ -933,6 +933,18 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 							continue
 						}
 					}
+					if grokQualityDegradedSameAccountRetry(account, reqModel, "", failoverErr, sameAccountRetryCount) {
+						reqLog.Warn("openai.grok_quality_degraded_same_account_retry",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+						)
+						select {
+						case <-c.Request.Context().Done():
+							return
+						default:
+						}
+						continue
+					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
@@ -1506,6 +1518,18 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 							}
 							continue
 						}
+					}
+					if grokQualityDegradedSameAccountRetry(account, reqModel, effectiveMappedModel, failoverErr, sameAccountRetryCount) {
+						reqLog.Warn("openai_messages.grok_quality_degraded_same_account_retry",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+						)
+						select {
+						case <-c.Request.Context().Done():
+							return
+						default:
+						}
+						continue
 					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}

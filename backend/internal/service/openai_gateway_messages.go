@@ -60,6 +60,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if account.IsOpenCodeGo() && IsOpenCodeUnsupportedModel(routingModel) {
 		return nil, writeOpenCodeUnsupportedModelError(c, true, routingModel)
 	}
+	// Claude Code hits /v1/messages. grok-* still must not go out as Responses.
+	if shouldForceGrokAPIKeyChat(account, strings.TrimSpace(gjson.GetBytes(body, "model").String()), defaultMappedModel) {
+		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
+		return s.forwardAnthropicViaRawChatCompletions(ctx, c, account, body, defaultMappedModel)
+	}
 	switch s.resolveUpstreamProtocolFor(ctx, account, APIProtocolAnthropic, routingModel) {
 	case APIProtocolAnthropic:
 		// 上游为供应商原生 Anthropic 端点：/v1/messages 零转换直通（仅模型名映射 +
