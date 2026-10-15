@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -42,6 +44,72 @@ type openaiNonStreamingResult struct {
 	imageCount       int
 	imageOutputSizes []string
 	searchCount      int
+}
+
+// openAIUpstreamTailDrainTimeout bounds background draining after a terminal
+// SSE event. The downstream request returns immediately; this only keeps the
+// upstream read open long enough for the peer to finish and log a clean EOF
+// instead of client_gone. Keep-alive/HTTP2 peers that never close are cut here.
+const openAIUpstreamTailDrainTimeout = 2 * time.Second
+
+// onceCloseReadCloser lets the drain goroutine and the timeout both close the
+// live upstream body without a double-close race.
+type onceCloseReadCloser struct {
+	io.ReadCloser
+	once sync.Once
+	err  error
+}
+
+func (r *onceCloseReadCloser) Close() error {
+	if r == nil || r.ReadCloser == nil {
+		return nil
+	}
+	r.once.Do(func() {
+		r.err = r.ReadCloser.Close()
+	})
+	return r.err
+}
+
+// detachOpenAIUpstreamBody swaps resp.Body for an empty closer. Callers defer
+// resp.Body.Close(), which would otherwise abort the upstream connection as
+// soon as the handler returns.
+func detachOpenAIUpstreamBody(resp *http.Response) io.ReadCloser {
+	if resp == nil || resp.Body == nil {
+		return nil
+	}
+	body := resp.Body
+	resp.Body = io.NopCloser(bytes.NewReader(nil))
+	return body
+}
+
+// drainOpenAIUpstreamTail discards bytes left after a terminal SSE event until
+// EOF. It is used by the synchronous scanner, which has already stopped reading.
+func drainOpenAIUpstreamTail(body io.ReadCloser) {
+	if body == nil {
+		return
+	}
+	wrapped := &onceCloseReadCloser{ReadCloser: body}
+	timer := time.AfterFunc(openAIUpstreamTailDrainTimeout, func() {
+		_ = wrapped.Close()
+	})
+	defer timer.Stop()
+	_, _ = io.Copy(io.Discard, wrapped)
+	_ = wrapped.Close()
+}
+
+// armOpenAIUpstreamTailDrain detaches the live body for the async scanner.
+// That scanner already owns the read, so this only arranges a timeout close;
+// it must not start a second reader.
+func armOpenAIUpstreamTailDrain(resp *http.Response, tailBody *atomic.Pointer[onceCloseReadCloser]) {
+	body := detachOpenAIUpstreamBody(resp)
+	if body == nil || tailBody == nil {
+		return
+	}
+	wrapped := &onceCloseReadCloser{ReadCloser: body}
+	tailBody.Store(wrapped)
+	time.AfterFunc(openAIUpstreamTailDrainTimeout, func() {
+		_ = wrapped.Close()
+	})
 }
 
 func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string) (*openaiStreamingResult, error) {
@@ -812,10 +880,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if streamEarlyErr != nil {
 				return resultWithUsage(), streamEarlyErr
 			}
-			// Terminal 事件完整写出后直接结束，不等上游 EOF（见下方异步循环同款说明）。
-			// Codex bare error 序列（error 后可能跟 response.failed 或翻盘的 completed）
-			// 必须继续读取，不适用提前结束。
+			// Terminal 事件完整写出后结束下游，不等上游 EOF，避免 keep-alive/HTTP2
+			// 拖长尾延迟。上游 body 交给后台读完再关：这里立刻 Close 会让 new-api
+			// 把已经成功的请求记成 client_gone。Codex bare error 序列必须继续读。
 			if sawTerminalEvent && !eventInProgress && (!codexFailureTerminal || !sawBareError) {
+				go drainOpenAIUpstreamTail(detachOpenAIUpstreamBody(resp))
 				return finalizeStream()
 			}
 		}
@@ -862,12 +931,23 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	}
 	var lastReadAt int64
 	atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
+	var upstreamTailBody atomic.Pointer[onceCloseReadCloser]
 	go func(scanBuf *sseScannerBuf64K) {
 		defer putSSEScannerBuf64K(scanBuf)
 		defer close(events)
+		defer func() {
+			if body := upstreamTailBody.Load(); body != nil {
+				_ = body.Close()
+			}
+		}()
 		for documentScanner.Scan() {
 			atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
 			if !sendEvent(scanEvent{line: documentScanner.Text()}) {
+				// done 已关闭。继续把同一个 scanner 读到 EOF，不能再开 io.Copy。
+				if upstreamTailBody.Load() != nil {
+					for documentScanner.Scan() {
+					}
+				}
 				return
 			}
 		}
@@ -900,10 +980,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			// Terminal 事件（response.completed 等）已完整写出后不再等上游 EOF：
 			// 上游在 keep-alive/HTTP2 复用连接上可能拖延关闭连接，空等期间只能
 			// 靠 keepalive 维持，白白拉长尾延迟。usage 已在 terminal 事件中解析。
-			// Codex bare error 序列（error 后可能跟 response.failed 或翻盘的 completed）
-			// 必须继续读取，不适用提前结束。
+			// 不在这里 Close：scanner 会在后台把剩余 SSE 读完，超时再关，避免
+			// 上游把成功请求记成 client_gone。Codex bare error 序列必须继续读。
 			if sawTerminalEvent && !eventInProgress && (!codexFailureTerminal || !sawBareError) {
-				_ = resp.Body.Close()
+				armOpenAIUpstreamTailDrain(resp, &upstreamTailBody)
 				return finalizeStream()
 			}
 

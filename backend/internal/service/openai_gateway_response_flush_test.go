@@ -688,3 +688,65 @@ func TestOpenAIResponseFlush_TerminalEventEndsStreamWithoutEOF(t *testing.T) {
 	gotBody, _ := recorder.snapshot()
 	require.Equal(t, body, gotBody)
 }
+
+func TestOpenAIResponseFlush_TerminalEventDrainsUpstreamTail(t *testing.T) {
+	terminal := "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":3,\"output_tokens\":1}}}\n\n"
+	tail := "data: {\"type\":\"response.tail\"}\n\n"
+	cases := []struct {
+		name string
+		cfg  config.GatewayConfig
+	}{
+		{name: "sync", cfg: config.GatewayConfig{}},
+		{name: "async", cfg: config.GatewayConfig{StreamKeepaliveInterval: 1, StreamDataIntervalTimeout: 30}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pr, pw := io.Pipe()
+			tailResult := make(chan error, 1)
+			tailWriteStarted := make(chan struct{})
+			go func() {
+				if _, err := pw.Write([]byte(terminal)); err != nil {
+					tailResult <- err
+					_ = pw.Close()
+					return
+				}
+				time.Sleep(200 * time.Millisecond)
+				close(tailWriteStarted)
+				_, err := pw.Write([]byte(tail))
+				if err == nil {
+					err = pw.Close()
+				} else {
+					_ = pw.Close()
+				}
+				tailResult <- err
+			}()
+
+			recorder := newOpenAIResponseFlushRecorder()
+			resultCh, errCh := runOpenAIResponseFlushTestAsync(recorder, pr, tc.cfg)
+			t.Cleanup(func() { _ = pr.Close() })
+
+			select {
+			case err := <-errCh:
+				require.NoError(t, err)
+				result := <-resultCh
+				require.NotNil(t, result)
+				require.Equal(t, 3, result.usage.InputTokens)
+				require.Equal(t, 1, result.usage.OutputTokens)
+			case <-tailWriteStarted:
+				t.Fatal("handler still blocked when upstream tail write started")
+			case <-time.After(2 * time.Second):
+				t.Fatal("handler blocked on upstream tail")
+			}
+
+			select {
+			case err := <-tailResult:
+				require.NoError(t, err)
+			case <-time.After(2 * time.Second):
+				t.Fatal("upstream tail was not consumed before close")
+			}
+			gotBody, _ := recorder.snapshot()
+			require.Equal(t, terminal, gotBody)
+			require.NotContains(t, gotBody, "response.tail")
+		})
+	}
+}
