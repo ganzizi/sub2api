@@ -301,6 +301,19 @@ type OpenAIForwardResult struct {
 	wsAccountFailoverReplayInput []json.RawMessage
 }
 
+// ShouldRecordOpenAIUsage reports whether this forward attempt is billed.
+// Upstream errors are not billed, even when a partial result was returned.
+// A client disconnect still bills usage metered before the disconnect.
+func ShouldRecordOpenAIUsage(result *OpenAIForwardResult, err error) bool {
+	if result == nil {
+		return false
+	}
+	if err == nil {
+		return true
+	}
+	return result.ClientDisconnect
+}
+
 // SucceededForScheduling reports whether this result is an upstream success
 // that may clear model-scoped transient state. The zero value remains a success
 // for existing non-WS callers.

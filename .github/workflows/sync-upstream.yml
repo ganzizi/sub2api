@@ -1,0 +1,36 @@
+name: sync-upstream
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Merge upstream main
+        run: |
+          set -euo pipefail
+          git config user.name "ganzizi"
+          git config user.email "756951735@qq.com"
+          git remote add upstream https://github.com/Wei-Shaw/sub2api.git
+          git fetch upstream main
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "fork main already contains upstream/main"
+            exit 0
+          fi
+          git merge --no-edit upstream/main
+          git push origin HEAD:main

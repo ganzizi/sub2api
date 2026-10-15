@@ -976,7 +976,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
 					zap.Error(err),
 				}
-				submitResponsesUsage(result)
+				// 上游错误不扣费。客户端断开已在上方入账。
+				if service.ShouldRecordOpenAIUsage(result, err) {
+					submitResponsesUsage(result)
+				}
 				if shouldLogOpenAIForwardFailureAsWarn(c, wroteFallback) {
 					reqLog.Warn("openai.forward_failed", fields...)
 					return
@@ -996,7 +999,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
-		submitResponsesUsage(result)
+		// 图片等部分失败会落到这里，上游错误同样不扣费。
+		if service.ShouldRecordOpenAIUsage(result, err) {
+			submitResponsesUsage(result)
+		}
 		reqLog.Debug("openai.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
@@ -1538,7 +1544,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					zap.Bool("fallback_error_response_written", wroteFallback),
 					zap.Error(err),
 				)
-				submitMessagesUsage(result)
+				// 上游错误不扣费。客户端断开已在上方入账。
+				if service.ShouldRecordOpenAIUsage(result, err) {
+					submitMessagesUsage(result)
+				}
 				return
 			}
 		}
@@ -1548,7 +1557,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, currentRoutingModel, false, result), true, nil)
 		}
 
-		submitMessagesUsage(result)
+		// 图片等部分失败会落到这里，上游错误同样不扣费。
+		if service.ShouldRecordOpenAIUsage(result, err) {
+			submitMessagesUsage(result)
+		}
 		reqLog.Debug("openai_messages.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
