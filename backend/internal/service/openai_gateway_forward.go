@@ -185,11 +185,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	// grok-* on an OpenAI API-key account always leaves via Chat Completions,
 	// including force_responses. PlatformGrok already returned above.
+	protocol := s.resolveUpstreamProtocolFor(ctx, account, APIProtocolResponses, routingModel)
 	if shouldForceGrokAPIKeyChat(account, originalModel, "") {
-		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
-		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body, startTime)
+		protocol = APIProtocolResponses
 	}
-	switch s.resolveUpstreamProtocolFor(ctx, account, APIProtocolResponses, routingModel) {
+	switch protocol {
 	case APIProtocolAnthropic:
 		// Responses 客户端 × Anthropic 上游：转成 Anthropic 请求走原生端点。不能落到
 		// raw-CC 分支——其 URL 构造会把 anthropic base 当 CC base 用。
@@ -406,6 +406,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String()) == "minimal" {
 		markPatchSet("reasoning.effort", "none")
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized reasoning.effort: minimal -> none (account: %s)", account.Name)
+	}
+	if isGrokFamilyModel(upstreamModel) {
+		effort := grokNewAPIReasoningEffort(gjson.GetBytes(body, "reasoning.effort").String(), inboundReasoningDisabledFromContext(ctx))
+		markPatchSet("reasoning.effort", effort)
+		if effort != "none" && strings.TrimSpace(gjson.GetBytes(body, "reasoning.summary").String()) == "" {
+			markPatchSet("reasoning.summary", "auto")
+		}
 	}
 	if strings.TrimSpace(gjson.GetBytes(body, "text.format.type").String()) == "json_schema" ||
 		strings.TrimSpace(gjson.GetBytes(body, "response_format.type").String()) == "json_schema" {

@@ -36,7 +36,7 @@ func TestForwardResponses_GrokAPIKeyUsesChatEvenWhenForcedResponses(t *testing.T
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(string(body)))
 	c.Request.Header.Set("Content-Type", "application/json")
 
-	upstream := chatOKUpstream("grok-4.6")
+	upstream := responsesOKUpstream("grok-4.6")
 	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
 	account := grokAPIKeyAccount(openai_compat.ResponsesSupportModeForceResponses, map[string]any{
 		"deep-model": "grok-4.6",
@@ -45,10 +45,10 @@ func TestForwardResponses_GrokAPIKeyUsesChatEvenWhenForcedResponses(t *testing.T
 	result, err := svc.Forward(WithInboundReasoningDisabled(context.Background()), c, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, "http://upstream.example/v1/chat/completions", upstream.lastReq.URL.String())
+	require.Equal(t, "http://upstream.example/v1/responses", upstream.lastReq.URL.String())
 	require.Equal(t, "grok-4.6", gjson.GetBytes(upstream.lastBody, "model").String())
-	require.Equal(t, "none", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
-	require.False(t, gjson.GetBytes(upstream.lastBody, "input").Exists())
+	require.Equal(t, "none", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
+	require.True(t, gjson.GetBytes(upstream.lastBody, "input").Exists())
 }
 
 func TestForwardResponses_GrokAPIKeyKeepsMinimalWhenClientDidNotDisableReasoning(t *testing.T) {
@@ -59,7 +59,7 @@ func TestForwardResponses_GrokAPIKeyKeepsMinimalWhenClientDidNotDisableReasoning
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(string(body)))
 
-	upstream := chatOKUpstream("grok-4.6")
+	upstream := responsesOKUpstream("grok-4.6")
 	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
 	account := grokAPIKeyAccount(openai_compat.ResponsesSupportModeForceResponses, map[string]any{
 		"deep-model": "grok-4.6",
@@ -67,7 +67,9 @@ func TestForwardResponses_GrokAPIKeyKeepsMinimalWhenClientDidNotDisableReasoning
 
 	_, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
-	require.Equal(t, "minimal", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
+	require.Equal(t, "http://upstream.example/v1/responses", upstream.lastReq.URL.String())
+	require.Equal(t, "xhigh", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
+	require.Equal(t, "auto", gjson.GetBytes(upstream.lastBody, "reasoning.summary").String())
 }
 
 func TestForwardResponses_NonGrokForceResponsesStaysOnResponses(t *testing.T) {
@@ -101,7 +103,11 @@ func TestForwardAsAnthropic_GrokAPIKeyRestoresNoneAfterGroupMapping(t *testing.T
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(string(body)))
 
-	upstream := chatOKUpstream("grok-4.6")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader("event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_ok\",\"object\":\"response\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\"}],\"status\":\"completed\"}],\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n")),
+	}}
 	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
 	account := grokAPIKeyAccount(openai_compat.ResponsesSupportModeForceResponses, map[string]any{
 		"deep-model": "grok-4.6",
@@ -113,9 +119,9 @@ func TestForwardAsAnthropic_GrokAPIKeyRestoresNoneAfterGroupMapping(t *testing.T
 
 	_, err := svc.ForwardAsAnthropic(ctx, c, account, body, "", "")
 	require.NoError(t, err)
-	require.Equal(t, "http://upstream.example/v1/chat/completions", upstream.lastReq.URL.String())
+	require.Equal(t, "http://upstream.example/v1/responses", upstream.lastReq.URL.String())
 	require.Equal(t, "grok-4.6", gjson.GetBytes(upstream.lastBody, "model").String())
-	require.Equal(t, "none", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
+	require.Equal(t, "none", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
 }
 
 func TestForwardAsAnthropic_NonGrokStillAppliesNoneToMinimal(t *testing.T) {
@@ -176,6 +182,16 @@ func chatOKUpstream(model string) *httpUpstreamRecorder {
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body: io.NopCloser(strings.NewReader(
 			`{"id":"chatcmpl_ok","object":"chat.completion","model":"` + model + `","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+		)),
+	}}
+}
+
+func responsesOKUpstream(model string) *httpUpstreamRecorder {
+	return &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"resp_ok","object":"response","model":"` + model + `","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}],"status":"completed"}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`,
 		)),
 	}}
 }

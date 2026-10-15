@@ -18,6 +18,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 )
 
@@ -61,11 +62,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		return nil, writeOpenCodeUnsupportedModelError(c, true, routingModel)
 	}
 	// Claude Code hits /v1/messages. grok-* still must not go out as Responses.
+	protocol := s.resolveUpstreamProtocolFor(ctx, account, APIProtocolAnthropic, routingModel)
 	if shouldForceGrokAPIKeyChat(account, strings.TrimSpace(gjson.GetBytes(body, "model").String()), defaultMappedModel) {
-		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
-		return s.forwardAnthropicViaRawChatCompletions(ctx, c, account, body, defaultMappedModel)
+		protocol = APIProtocolResponses
 	}
-	switch s.resolveUpstreamProtocolFor(ctx, account, APIProtocolAnthropic, routingModel) {
+	switch protocol {
 	case APIProtocolAnthropic:
 		// 上游为供应商原生 Anthropic 端点：/v1/messages 零转换直通（仅模型名映射 +
 		// 少量 body 清洗），完整保留 thinking / tool_use / cache 语义。
@@ -167,6 +168,15 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	responsesReq.Model = upstreamModel
 	if responsesReq.Reasoning != nil {
 		responsesReq.Reasoning.Effort = openAICompatAnthropicReasoningEffort(&anthropicReq, upstreamModel, responsesReq.Reasoning.Effort)
+	}
+	if isGrokFamilyModel(upstreamModel) {
+		if responsesReq.Reasoning == nil {
+			responsesReq.Reasoning = &apicompat.ResponsesReasoning{}
+		}
+		responsesReq.Reasoning.Effort = grokNewAPIReasoningEffort(responsesReq.Reasoning.Effort, inboundReasoningDisabledFromContext(ctx))
+		if responsesReq.Reasoning.Effort != "none" && strings.TrimSpace(responsesReq.Reasoning.Summary) == "" {
+			responsesReq.Reasoning.Summary = "auto"
+		}
 	}
 	if previousResponseID != "" {
 		responsesReq.PreviousResponseID = previousResponseID
@@ -306,6 +316,17 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			responsesBody = policyBody
 			if responsesReq.Reasoning != nil {
 				responsesReq.Reasoning.Effort = gjson.GetBytes(responsesBody, "reasoning.effort").String()
+			}
+		}
+	}
+	if isGrokFamilyModel(upstreamModel) {
+		effort := grokNewAPIReasoningEffort(gjson.GetBytes(responsesBody, "reasoning.effort").String(), inboundReasoningDisabledFromContext(ctx))
+		if next, err := sjson.SetBytes(responsesBody, "reasoning.effort", effort); err == nil {
+			responsesBody = next
+		}
+		if effort != "none" && strings.TrimSpace(gjson.GetBytes(responsesBody, "reasoning.summary").String()) == "" {
+			if next, err := sjson.SetBytes(responsesBody, "reasoning.summary", "auto"); err == nil {
+				responsesBody = next
 			}
 		}
 	}
