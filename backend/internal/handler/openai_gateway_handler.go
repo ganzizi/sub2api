@@ -645,6 +645,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
+	grokQualityRetries := make(map[int64]*grokQualityRetryWindow)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	var passthroughFailoverState openAIPassthroughFailoverState
@@ -933,7 +934,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 							continue
 						}
 					}
-					if grokQualityDegradedSameAccountRetry(account, reqModel, "", failoverErr, sameAccountRetryCount) {
+					if grokQualityDegradedSameAccountRetry(account, reqModel, "", failoverErr, grokQualityRetries) {
 						reqLog.Warn("openai.grok_quality_degraded_same_account_retry",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
@@ -1307,6 +1308,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
+	grokQualityRetries := make(map[int64]*grokQualityRetryWindow)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	effectiveMappedModel := preferredMappedModel
@@ -1519,7 +1521,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 							continue
 						}
 					}
-					if grokQualityDegradedSameAccountRetry(account, reqModel, effectiveMappedModel, failoverErr, sameAccountRetryCount) {
+					if grokQualityDegradedSameAccountRetry(account, reqModel, effectiveMappedModel, failoverErr, grokQualityRetries) {
 						reqLog.Warn("openai_messages.grok_quality_degraded_same_account_retry",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
