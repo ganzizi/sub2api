@@ -169,15 +169,6 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if responsesReq.Reasoning != nil {
 		responsesReq.Reasoning.Effort = openAICompatAnthropicReasoningEffort(&anthropicReq, upstreamModel, responsesReq.Reasoning.Effort)
 	}
-	if isGrokFamilyModel(upstreamModel) {
-		if responsesReq.Reasoning == nil {
-			responsesReq.Reasoning = &apicompat.ResponsesReasoning{}
-		}
-		responsesReq.Reasoning.Effort = grokNewAPIReasoningEffort(responsesReq.Reasoning.Effort, inboundReasoningDisabledFromContext(ctx))
-		if responsesReq.Reasoning.Effort != "none" && strings.TrimSpace(responsesReq.Reasoning.Summary) == "" {
-			responsesReq.Reasoning.Summary = "auto"
-		}
-	}
 	if previousResponseID != "" {
 		responsesReq.PreviousResponseID = previousResponseID
 		trimAnthropicCompatResponsesInputToLatestTurn(responsesReq)
@@ -319,15 +310,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			}
 		}
 	}
-	if isGrokFamilyModel(upstreamModel) {
-		effort := grokNewAPIReasoningEffort(gjson.GetBytes(responsesBody, "reasoning.effort").String(), inboundReasoningDisabledFromContext(ctx))
-		if next, err := sjson.SetBytes(responsesBody, "reasoning.effort", effort); err == nil {
+	if isGrokFamilyModel(upstreamModel) && inboundReasoningDisabledFromContext(ctx) {
+		if next, err := sjson.SetBytes(responsesBody, "reasoning.effort", "none"); err == nil {
 			responsesBody = next
-		}
-		if effort != "none" && strings.TrimSpace(gjson.GetBytes(responsesBody, "reasoning.summary").String()) == "" {
-			if next, err := sjson.SetBytes(responsesBody, "reasoning.summary", "auto"); err == nil {
-				responsesBody = next
-			}
 		}
 	}
 

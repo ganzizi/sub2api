@@ -68,8 +68,8 @@ func TestForwardResponses_GrokAPIKeyKeepsMinimalWhenClientDidNotDisableReasoning
 	_, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
 	require.Equal(t, "http://upstream.example/v1/responses", upstream.lastReq.URL.String())
-	require.Equal(t, "xhigh", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
-	require.Equal(t, "auto", gjson.GetBytes(upstream.lastBody, "reasoning.summary").String())
+	require.Equal(t, "minimal", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "reasoning.summary").Exists())
 }
 
 func TestForwardResponses_NonGrokForceResponsesStaysOnResponses(t *testing.T) {

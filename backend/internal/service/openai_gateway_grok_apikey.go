@@ -126,13 +126,3 @@ func GrokQualityDegradedRecoveredAttempt(upstreamModel string, event *OpsUpstrea
 	}
 	return strings.Contains(event.Message, "上游响应缺少推理") || strings.Contains(event.Detail, "上游响应缺少推理")
 }
-
-// grokNewAPIReasoningEffort matches the effort used by the stable new-api
-// client. Audits show that client sends xhigh on /v1/responses and almost never
-// trips the quality hold. Explicit none still skips the hold.
-func grokNewAPIReasoningEffort(effort string, reasoningDisabled bool) string {
-	if reasoningDisabled || strings.EqualFold(strings.TrimSpace(effort), "none") {
-		return "none"
-	}
-	return "xhigh"
-}

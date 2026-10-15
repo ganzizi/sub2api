@@ -403,16 +403,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Upstream model resolved: %s -> %s (account: %s, type: %s, isCodexCLI: %v)", billingModel, upstreamModel, account.Name, account.Type, isCodexCLI)
 		}
 	}
-	if strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String()) == "minimal" {
+	if strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String()) == "minimal" && !isGrokFamilyModel(upstreamModel) {
 		markPatchSet("reasoning.effort", "none")
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized reasoning.effort: minimal -> none (account: %s)", account.Name)
 	}
-	if isGrokFamilyModel(upstreamModel) {
-		effort := grokNewAPIReasoningEffort(gjson.GetBytes(body, "reasoning.effort").String(), inboundReasoningDisabledFromContext(ctx))
-		markPatchSet("reasoning.effort", effort)
-		if effort != "none" && strings.TrimSpace(gjson.GetBytes(body, "reasoning.summary").String()) == "" {
-			markPatchSet("reasoning.summary", "auto")
-		}
+	if isGrokFamilyModel(upstreamModel) && inboundReasoningDisabledFromContext(ctx) {
+		markPatchSet("reasoning.effort", "none")
 	}
 	if strings.TrimSpace(gjson.GetBytes(body, "text.format.type").String()) == "json_schema" ||
 		strings.TrimSpace(gjson.GetBytes(body, "response_format.type").String()) == "json_schema" {
