@@ -1875,3 +1875,70 @@ func TestGPT61SolOnlyChatFallbackRejectsToolsAndDisabledReasoning(t *testing.T) 
 		}
 	}
 }
+
+func TestHandleChatStreamingResponse_TerminalEventDrainsUpstreamTail(t *testing.T) {
+	terminal := "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"model\":\"gpt-5.4\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"id\":\"msg_1\",\"role\":\"assistant\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\"}]}],\"usage\":{\"input_tokens\":3,\"output_tokens\":1,\"total_tokens\":4}}}\n\n"
+	tail := "data: {\"type\":\"response.tail\"}\n\n"
+	cases := []struct {
+		name string
+		cfg  config.GatewayConfig
+	}{
+		{name: "sync", cfg: config.GatewayConfig{}},
+		{name: "async", cfg: config.GatewayConfig{StreamKeepaliveInterval: 10, StreamDataIntervalTimeout: 180}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			pr, pw := io.Pipe()
+			tailResult := make(chan error, 1)
+			tailWriteStarted := make(chan struct{})
+			go func() {
+				if _, err := pw.Write([]byte(terminal)); err != nil {
+					tailResult <- err
+					_ = pw.Close()
+					return
+				}
+				time.Sleep(200 * time.Millisecond)
+				close(tailWriteStarted)
+				_, err := pw.Write([]byte(tail))
+				if err == nil {
+					err = pw.Close()
+				} else {
+					_ = pw.Close()
+				}
+				tailResult <- err
+			}()
+			t.Cleanup(func() { _ = pr.Close() })
+
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       pr,
+			}
+			svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: tc.cfg}}
+			errCh := make(chan error, 1)
+			go func() {
+				_, err := svc.handleChatStreamingResponse(resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, "deepseek-v4.1-flash", "deepseek-v4.1-flash", "deepseek-v4.1-flash", time.Now(), 0)
+				errCh <- err
+			}()
+
+			select {
+			case err := <-errCh:
+				require.NoError(t, err)
+			case <-tailWriteStarted:
+				t.Fatal("chat handler still blocked when upstream tail write started")
+			case <-time.After(2 * time.Second):
+				t.Fatal("chat handler blocked on upstream tail")
+			}
+			select {
+			case err := <-tailResult:
+				require.NoError(t, err)
+			case <-time.After(2 * time.Second):
+				t.Fatal("chat upstream tail was not consumed before close")
+			}
+		})
+	}
+}

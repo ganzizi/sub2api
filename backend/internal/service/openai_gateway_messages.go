@@ -1220,6 +1220,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				continue
 			}
 			if processFrame(frame) {
+				go drainOpenAIUpstreamTail(detachOpenAIUpstreamBody(resp))
 				return finalizeStream()
 			}
 		}
@@ -1255,11 +1256,21 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			return false
 		}
 	}
+	var upstreamTailBody atomic.Pointer[onceCloseReadCloser]
 	go func() {
 		defer close(events)
+		defer func() {
+			if body := upstreamTailBody.Load(); body != nil {
+				_ = body.Close()
+			}
+		}()
 		for scanner.Scan() {
 			atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
 			if !sendEvent(scanEvent{line: scanner.Text()}) {
+				if upstreamTailBody.Load() != nil {
+					for scanner.Scan() {
+					}
+				}
 				return
 			}
 		}
@@ -1310,6 +1321,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				continue
 			}
 			if processFrame(frame) {
+				armOpenAIUpstreamTailDrain(resp, &upstreamTailBody)
 				return finalizeStream()
 			}
 

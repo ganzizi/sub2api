@@ -112,6 +112,16 @@ func armOpenAIUpstreamTailDrain(resp *http.Response, tailBody *atomic.Pointer[on
 	})
 }
 
+// disarmOpenAIUpstreamCancel stops a deferred closure from aborting the upstream
+// request after a terminal SSE event. defer cancel() captured by value is not
+// affected; the registration must call through the variable.
+func disarmOpenAIUpstreamCancel(cancel *context.CancelFunc) {
+	if cancel == nil {
+		return
+	}
+	*cancel = func() {}
+}
+
 func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string) (*openaiStreamingResult, error) {
 	return s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, mappedModel, "")
 }

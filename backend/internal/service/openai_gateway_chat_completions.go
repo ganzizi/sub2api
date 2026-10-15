@@ -336,11 +336,11 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 
 	// 6. Build upstream request
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
-	cancelUpstream := func() {}
+	var cancelUpstream context.CancelFunc = func() {}
 	if clientStream {
 		upstreamCtx, cancelUpstream = context.WithCancel(upstreamCtx)
 	}
-	defer cancelUpstream()
+	defer func() { cancelUpstream() }()
 	upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, true, promptCacheKey, false)
 	releaseUpstreamCtx()
 	if err != nil {
@@ -419,6 +419,11 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	var handleErr error
 	if clientStream {
 		result, handleErr = s.handleChatStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime, len(body))
+		if handleErr == nil {
+			// 成功的流已在 handler 内把 body 交给后台读完。这里再 cancel 会让
+			// new-api 把 completed 记成 client_gone。
+			disarmOpenAIUpstreamCancel(&cancelUpstream)
+		}
 	} else {
 		result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 	}
@@ -1180,6 +1185,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				return missingTerminalErr()
 			}
 			if processFrame(frame) {
+				go drainOpenAIUpstreamTail(detachOpenAIUpstreamBody(resp))
 				return finalizeStream()
 			}
 		}
@@ -1218,11 +1224,21 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			return false
 		}
 	}
+	var upstreamTailBody atomic.Pointer[onceCloseReadCloser]
 	go func() {
 		defer close(events)
+		defer func() {
+			if body := upstreamTailBody.Load(); body != nil {
+				_ = body.Close()
+			}
+		}()
 		for scanner.Scan() {
 			atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
 			if !sendEvent(scanEvent{line: scanner.Text()}) {
+				if upstreamTailBody.Load() != nil {
+					for scanner.Scan() {
+					}
+				}
 				return
 			}
 		}
@@ -1275,6 +1291,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				return missingTerminalErr()
 			}
 			if processFrame(frame) {
+				armOpenAIUpstreamTailDrain(resp, &upstreamTailBody)
 				return finalizeStream()
 			}
 
