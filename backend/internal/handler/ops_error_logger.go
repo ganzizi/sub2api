@@ -1298,7 +1298,7 @@ func logOpsRecoveredUpstream(c *gin.Context, ops *service.OpsService, finalStatu
 	if len(entry.UpstreamErrors) > 0 {
 		visibleEvents := make([]*service.OpsUpstreamErrorEvent, 0, len(entry.UpstreamErrors))
 		for _, event := range entry.UpstreamErrors {
-			if event != nil && !event.SkipMonitoring {
+			if event != nil && !event.SkipMonitoring && !service.GrokQualityDegradedRecoveredAttempt(c.GetString(service.OpsUpstreamModelKey), event) {
 				visibleEvents = append(visibleEvents, event)
 			}
 		}

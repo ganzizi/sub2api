@@ -160,6 +160,16 @@ func TestShouldSameAccountRetryGrokQualityDegraded(t *testing.T) {
 	require.False(t, ShouldSameAccountRetryGrokQualityDegraded(grok, "deep-model", "", nil))
 }
 
+func TestGrokQualityDegradedRecoveredAttemptHidesRetryButNotOtherModels(t *testing.T) {
+	quality := &OpsUpstreamErrorEvent{Message: "上游响应缺少推理", Detail: `{"error":{"code":"quality_degraded"}}`}
+	other := &OpsUpstreamErrorEvent{Message: "upstream overloaded", Detail: `{"error":{"code":"server_error"}}`}
+	require.True(t, GrokQualityDegradedRecoveredAttempt("grok-4.6", quality))
+	require.True(t, GrokQualityDegradedRecoveredAttempt("xai/grok-4.6", &OpsUpstreamErrorEvent{Message: "上游响应缺少推理"}))
+	require.False(t, GrokQualityDegradedRecoveredAttempt("gpt-5.4", quality))
+	require.False(t, GrokQualityDegradedRecoveredAttempt("grok-4.6", other))
+	require.False(t, GrokQualityDegradedRecoveredAttempt("grok-4.6", nil))
+}
+
 func chatOKUpstream(model string) *httpUpstreamRecorder {
 	return &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,

@@ -111,3 +111,18 @@ func upstreamErrorCodeIs(body []byte, want string) bool {
 	}
 	return false
 }
+
+// GrokQualityDegradedRecoveredAttempt reports an upstream quality hold on a
+// grok-* model. Those attempts are retried inside the same client request, so a
+// later success must not keep an error record for them. Billing stays on
+// ShouldRecordOpenAIUsage: an upstream error is not charged. A client-facing
+// failure still uses the normal final error log.
+func GrokQualityDegradedRecoveredAttempt(upstreamModel string, event *OpsUpstreamErrorEvent) bool {
+	if event == nil || !isGrokFamilyModel(upstreamModel) {
+		return false
+	}
+	if upstreamErrorCodeIs([]byte(event.Detail), grokQualityDegradedCode) || upstreamErrorCodeIs([]byte(event.Message), grokQualityDegradedCode) {
+		return true
+	}
+	return strings.Contains(event.Message, "上游响应缺少推理") || strings.Contains(event.Detail, "上游响应缺少推理")
+}
