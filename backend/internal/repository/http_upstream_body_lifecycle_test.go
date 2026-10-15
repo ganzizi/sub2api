@@ -62,6 +62,23 @@ func requireNoUpstreamInFlight(t *testing.T, s *httpUpstreamService) {
 	}
 }
 
+// requireUpstreamInFlightDrained waits out the background responses tail drain.
+// A terminal SSE event returns to the caller before the upstream body is closed,
+// so the in-flight count drops only after that drain reaches EOF or times out.
+func requireUpstreamInFlightDrained(t *testing.T, s *httpUpstreamService) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		for _, entry := range s.clients {
+			if atomic.LoadInt64(&entry.inFlight) != 0 {
+				return false
+			}
+		}
+		return true
+	}, 3*time.Second, 10*time.Millisecond)
+}
+
 type notifyReadCloser struct {
 	io.ReadCloser
 	started chan<- struct{}

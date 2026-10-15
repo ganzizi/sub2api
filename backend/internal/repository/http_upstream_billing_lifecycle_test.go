@@ -141,7 +141,7 @@ func TestHTTPUpstreamForwardDrainsUsageAfterClientDisconnect(t *testing.T) {
 	require.Greater(t, usageRepo.logs[0].ActualCost, 0.0)
 	s, ok := upstream.(*httpUpstreamService)
 	require.True(t, ok)
-	requireNoUpstreamInFlight(t, s)
+	requireUpstreamInFlightDrained(t, s)
 	for _, entry := range s.clients {
 		entry.client.CloseIdleConnections()
 	}
