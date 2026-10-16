@@ -103,7 +103,7 @@ func TestRunQuickCreateSuccess(t *testing.T) {
 	if result.GroupName != "组合-月套餐" || result.ValidityDays != 30 || result.APIKey != "sk-test" {
 		t.Fatalf("result = %#v", result)
 	}
-	if !strings.HasSuffix(result.Email, "@quick.local") || len(result.Password) != quickCreatePasswordLen {
+	if !strings.HasSuffix(result.Email, "@local.com") || len(result.Password) != quickCreatePasswordLen {
 		t.Fatalf("credentials email=%s password=%s", result.Email, result.Password)
 	}
 	if result.WebsiteURL != "https://api.go-oai.com" || result.RequestURL != "https://api.go-oai.com/v1" {

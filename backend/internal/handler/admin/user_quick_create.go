@@ -200,7 +200,7 @@ func newQuickCreateCredentials() (string, string, error) {
 	if _, err := rand.Read(random[:]); err != nil {
 		return "", "", fmt.Errorf("generate user: %w", err)
 	}
-	email := "q" + hex.EncodeToString(random[:]) + "@quick.local"
+	email := "q" + hex.EncodeToString(random[:]) + "@local.com"
 	password, err := randomPassword(quickCreatePasswordLen)
 	if err != nil {
 		return "", "", err

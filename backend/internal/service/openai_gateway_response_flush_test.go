@@ -690,7 +690,8 @@ func TestOpenAIResponseFlush_TerminalEventEndsStreamWithoutEOF(t *testing.T) {
 }
 
 func TestOpenAIResponseFlush_TerminalEventDrainsUpstreamTail(t *testing.T) {
-	terminal := "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":3,\"output_tokens\":1}}}\n\n"
+	// 夹具自带 created_at，避免 fork 补字段后和上游字节断言不一致。
+	terminal := "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":3,\"output_tokens\":1},\"created_at\":1}}\n\n"
 	tail := "data: {\"type\":\"response.tail\"}\n\n"
 	cases := []struct {
 		name string
