@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: sync-upstream
@@ -22,6 +23,8 @@ jobs:
           ref: main
           fetch-depth: 0
       - name: Merge upstream main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           git config user.name "ganzizi"
@@ -34,3 +37,5 @@ jobs:
           fi
           git merge --no-edit upstream/main
           git push origin HEAD:main
+          # GITHUB_TOKEN 推送不会触发 push 工作流，必须显式发布 GHCR latest。
+          gh workflow run publish-image.yml --ref main
