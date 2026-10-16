@@ -34,6 +34,9 @@ type UserHandler struct {
 	totpService           *service.TotpService                // 角色提升为管理员的 step-up 门控
 	userService           *service.UserService
 	settingService        *service.SettingService // step-up 功能开关
+	// quickSubs/quickKeys 只服务快捷创建，不改变原有创建用户和分配订阅路径。
+	quickSubs quickSubscriptionAssigner
+	quickKeys quickAPIKeyCreator
 }
 
 // NewUserHandler creates a new admin user handler
@@ -55,6 +58,32 @@ func NewUserHandler(
 		userService:           userService,
 		settingService:        settingService,
 	}
+}
+
+// EnableQuickCreate 接入快捷创建依赖。构造函数保持不变，避免影响上游 wire 合并。
+func (h *UserHandler) EnableQuickCreate(subs *service.SubscriptionService, keys *service.APIKeyService) {
+	if h == nil {
+		return
+	}
+	h.quickSubs = subs
+	h.quickKeys = keys
+}
+
+// ProvideUserHandler 是 fork 的 Wire 入口。上游构造函数签名保持原样，生成代码只多这一处调用。
+func ProvideUserHandler(
+	adminService service.AdminService,
+	concurrencyService *service.ConcurrencyService,
+	userPlatformQuotaRepo service.UserPlatformQuotaRepository,
+	billingCache service.BillingCache,
+	totpService *service.TotpService,
+	userService *service.UserService,
+	settingService *service.SettingService,
+	subs *service.SubscriptionService,
+	keys *service.APIKeyService,
+) *UserHandler {
+	handler := NewUserHandler(adminService, concurrencyService, userPlatformQuotaRepo, billingCache, totpService, userService, settingService)
+	handler.EnableQuickCreate(subs, keys)
+	return handler
 }
 
 // CreateUserRequest represents admin create user request

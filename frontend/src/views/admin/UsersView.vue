@@ -268,6 +268,10 @@
               <Icon name="plus" size="md" class="mr-2" />
               {{ t('admin.users.createUser') }}
             </button>
+            <button type="button" data-test="quick-create-user" @click="showQuickCreateModal = true" class="btn btn-secondary flex-1 md:flex-initial">
+              <Icon name="plus" size="md" class="mr-2" />
+              {{ t('admin.users.quickCreate.action') }}
+            </button>
           </div>
         </div>
       </template>
@@ -769,6 +773,7 @@
       @cancel="bulkDeleteIds = []"
     />
     <UserCreateModal :show="showCreateModal" @close="showCreateModal = false" @success="loadUsers" />
+    <UserQuickCreateModal :show="showQuickCreateModal" @close="showQuickCreateModal = false" @success="loadUsers" />
     <UserEditModal :show="showEditModal" :user="editingUser" @close="closeEditModal" @success="loadUsers" />
     <BulkEditUserModal
       :show="showBulkEditModal"
@@ -822,6 +827,7 @@ import PlatformUsageBreakdown from '@/components/user/PlatformUsageBreakdown.vue
 import PlatformCostCell from '@/components/user/PlatformCostCell.vue'
 import UserPlatformQuotaCell from '@/components/user/UserPlatformQuotaCell.vue'
 import UserCreateModal from '@/components/admin/user/UserCreateModal.vue'
+import UserQuickCreateModal from '@/components/admin/user/UserQuickCreateModal.vue'
 import UserEditModal from '@/components/admin/user/UserEditModal.vue'
 import BulkEditUserModal from '@/components/admin/user/BulkEditUserModal.vue'
 import UserPlatformQuotaModal from '@/components/admin/user/UserPlatformQuotaModal.vue'
@@ -1340,6 +1346,7 @@ const pagination = reactive({
 })
 
 const showCreateModal = ref(false)
+const showQuickCreateModal = ref(false)
 const showEditModal = ref(false)
 const showBulkEditModal = ref(false)
 const showDeleteDialog = ref(false)

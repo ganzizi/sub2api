@@ -404,10 +404,32 @@ export async function resetPlatformQuotaWindow(
   return data
 }
 
+
+export interface QuickCreateUserResult {
+  email: string
+  password: string
+  api_key: string
+  website_url: string
+  request_url: string
+  group_id: number
+  group_name: string
+  validity_days: number
+  models_label: string
+}
+
+export async function quickCreate(groupId: number, validityDays: number): Promise<QuickCreateUserResult> {
+  const { data } = await apiClient.post<QuickCreateUserResult>('/admin/users/quick-create', {
+    group_id: groupId,
+    validity_days: validityDays
+  })
+  return data
+}
+
 export const usersAPI = {
   list,
   getById,
   create,
+  quickCreate,
   update,
   delete: deleteUser,
   updateBalance,
