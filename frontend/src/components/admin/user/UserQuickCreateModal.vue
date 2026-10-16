@@ -99,8 +99,12 @@ const groupOptions = computed(() =>
     .map((group) => ({ value: group.id, label: group.name }))
 )
 
-const groupMeta = (value: string | number | boolean | null | undefined) =>
-  groups.value.find((group) => group.id === Number(value))
+const groupMeta = (value: unknown) => {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined
+  const id = Number(value)
+  if (!Number.isFinite(id)) return undefined
+  return groups.value.find((group) => group.id === id)
+}
 
 const rows = computed(() => {
   if (!result.value) return []
