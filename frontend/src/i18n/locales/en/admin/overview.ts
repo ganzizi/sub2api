@@ -514,7 +514,7 @@ export default {
         key: 'Key',
         plan: 'Subscription',
         models: 'Models',
-        modelsValue: 'deepseek-v4.1-flash（1M/多模态）、glm-5.3-flash（1M/多模态）、deep（500KB/多模态）',
+        modelsValue: 'deepseek-v4.1-flash（1M/多模态）、glm-5.3-flash（1M/多模态）、deep（500KB/多模态/🔥复杂任务推荐）',
         copy: 'Copy',
         copied: 'Copied',
         copyAll: 'Copy all',
