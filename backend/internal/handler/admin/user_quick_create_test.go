@@ -55,14 +55,16 @@ func (f *fakeQuickSubs) AssignOrExtendSubscription(_ context.Context, input *ser
 }
 
 type fakeQuickKeys struct {
-	err error
-	key *service.APIKey
+	err  error
+	key  *service.APIKey
+	name string
 }
 
 func (f *fakeQuickKeys) Create(_ context.Context, userID int64, req service.CreateAPIKeyRequest) (*service.APIKey, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
+	f.name = req.Name
 	if f.key != nil {
 		return f.key, nil
 	}
@@ -111,6 +113,9 @@ func TestRunQuickCreateSuccess(t *testing.T) {
 	}
 	if result.ModelsLabel != quickCreateModelsLabel {
 		t.Fatalf("models = %s", result.ModelsLabel)
+	}
+	if keys.name != "key" {
+		t.Fatalf("api key name = %s", keys.name)
 	}
 	if adminFake.lastInput == nil || adminFake.lastInput.Concurrency != 3 || adminFake.lastInput.Role != service.RoleUser {
 		t.Fatalf("create input = %#v", adminFake.lastInput)

@@ -172,7 +172,7 @@ func runQuickCreate(ctx context.Context, admin quickCreateAdmin, subs quickSubsc
 
 	groupIDCopy := group.ID
 	apiKey, err := keys.Create(ctx, created.ID, service.CreateAPIKeyRequest{
-		Name:    "quick",
+		Name:    "key",
 		GroupID: &groupIDCopy,
 	})
 	if err != nil {
