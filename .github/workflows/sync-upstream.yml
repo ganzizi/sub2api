@@ -38,4 +38,5 @@ jobs:
           git merge --no-edit upstream/main
           git push origin HEAD:main
           # GITHUB_TOKEN 推送不会触发 push 工作流，必须显式发布 GHCR latest。
-          gh workflow run publish-image.yml --ref main
+          # 上面加了 upstream remote 后，gh 会默认选中上游仓库；必须指定本 fork。
+          gh workflow run publish-image.yml --repo "${GITHUB_REPOSITORY}" --ref main
