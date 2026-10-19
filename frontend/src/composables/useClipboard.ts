@@ -19,7 +19,8 @@ function fallbackCopy(text: string): boolean {
   const textarea = document.createElement('textarea')
   textarea.value = text
   textarea.setAttribute('readonly', 'true')
-  textarea.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none'
+  // 1px 高会让部分浏览器的 execCommand 丢掉最后一行，模型文案就复制不上去。
+  textarea.style.cssText = 'position:fixed;top:0;left:-9999px;width:800px;height:400px;opacity:0;pointer-events:none'
   document.body.appendChild(textarea)
   textarea.focus({ preventScroll: true })
   textarea.select()

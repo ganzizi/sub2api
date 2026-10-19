@@ -58,7 +58,7 @@
     <template #footer>
       <div class="flex justify-end gap-2">
         <button type="button" class="btn btn-secondary" :disabled="submitting" @click="close">{{ t('common.close') }}</button>
-        <button v-if="result" type="button" class="btn btn-primary" @click="copy(allText)">{{ t('admin.users.quickCreate.copyAll') }}</button>
+        <button v-if="result" type="button" class="btn btn-primary" @click="copyAll">{{ t('admin.users.quickCreate.copyAll') }}</button>
         <button v-else type="submit" form="quick-create-user-form" class="btn btn-primary" :disabled="submitting || !groupId">
           {{ submitting ? t('admin.users.quickCreate.creating') : t('admin.users.quickCreate.submit') }}
         </button>
@@ -124,7 +124,6 @@ const rows = computed(() => {
   ]
 })
 
-const allText = computed(() => rows.value.map((row) => `${row.label}：${row.value}`).join('\n'))
 
 const reset = () => {
   groupId.value = null
@@ -155,7 +154,18 @@ const close = () => {
 }
 
 const copy = (value: string) => {
-  copyToClipboard(value, t('admin.users.quickCreate.copied'))
+  void copyToClipboard(value, t('admin.users.quickCreate.copied'))
+}
+
+const copyAll = () => {
+  const modelsLabel = t('admin.users.quickCreate.models')
+  const modelsValue = result.value?.models_label || t('admin.users.quickCreate.modelsValue')
+  const lines = rows.value.map((row) => `${row.label}：${row.value ?? ''}`)
+  const modelsPrefix = `${modelsLabel}：`
+  if (!lines.some((line) => line.startsWith(modelsPrefix))) {
+    lines.push(`${modelsPrefix}${modelsValue}`)
+  }
+  void copyToClipboard(`${lines.join('\n')}\n`, t('admin.users.quickCreate.copied'))
 }
 
 const submit = async () => {

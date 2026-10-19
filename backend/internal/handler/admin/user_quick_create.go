@@ -16,7 +16,7 @@ import (
 const (
 	quickCreateMaxValidityDays = 36500
 	quickCreatePasswordLen     = 12
-	quickCreateModelsLabel     = "deepseek-v4.1-flash（1M/多模态）、glm-5.3-flash（1M/多模态）、deep（500KB/多模态/🔥复杂任务推荐）"
+	quickCreateModelsLabel     = "deepseek-v4.1-flash（1M）、glm-5.3-flash（1M）、deep（500KB/💡独家多模态/🔥推荐用于复杂任务/⚠️只适用OpenAI Responses API协议）"
 )
 
 const quickCreatePasswordAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"

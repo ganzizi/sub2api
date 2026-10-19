@@ -514,7 +514,7 @@ export default {
         key: 'Key',
         plan: '订阅套餐',
         models: '组合模型',
-        modelsValue: 'deepseek-v4.1-flash（1M/多模态）、glm-5.3-flash（1M/多模态）、deep（500KB/多模态/🔥复杂任务推荐）',
+        modelsValue: 'deepseek-v4.1-flash（1M）、glm-5.3-flash（1M）、deep（500KB/💡独家多模态/🔥推荐用于复杂任务/⚠️只适用OpenAI Responses API协议）',
         copy: '复制',
         copied: '已复制',
         copyAll: '复制全部',
