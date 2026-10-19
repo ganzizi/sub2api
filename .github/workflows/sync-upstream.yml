@@ -15,18 +15,34 @@ concurrency:
 
 jobs:
   merge:
+    if: github.repository == 'ganzizi/sub2api'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
         with:
+          repository: ganzizi/sub2api
           ref: main
           fetch-depth: 0
       - name: Merge upstream main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ganzizi/sub2api
         run: |
           set -euo pipefail
+          fork_repo="ganzizi/sub2api"
+          if [ "${GITHUB_REPOSITORY}" != "${fork_repo}" ]; then
+            echo "拒绝在非个人 fork 上同步或发布镜像: ${GITHUB_REPOSITORY}"
+            exit 1
+          fi
+          origin_url="$(git remote get-url origin)"
+          case "${origin_url}" in
+            *github.com[:/]ganzizi/sub2api*|*github.com[:/]ganzizi/sub2api.git*) ;;
+            *)
+              echo "origin 不是个人 fork: ${origin_url}"
+              exit 1
+              ;;
+          esac
           git config user.name "ganzizi"
           git config user.email "756951735@qq.com"
           git remote add upstream https://github.com/Wei-Shaw/sub2api.git
@@ -38,5 +54,5 @@ jobs:
           git merge --no-edit upstream/main
           git push origin HEAD:main
           # GITHUB_TOKEN 推送不会触发 push 工作流，必须显式发布 GHCR latest。
-          # 上面加了 upstream remote 后，gh 会默认选中上游仓库；必须指定本 fork。
-          gh workflow run publish-image.yml --repo "${GITHUB_REPOSITORY}" --ref main
+          # upstream remote 会让 gh 默认选中 Wei-Shaw/sub2api，所以仓库写死本 fork。
+          gh workflow run publish-image.yml --repo "${fork_repo}" --ref main
