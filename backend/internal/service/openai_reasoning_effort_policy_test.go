@@ -156,6 +156,16 @@ func TestNormalizeReasoningEffortMappings(t *testing.T) {
 		require.ErrorContains(t, err, "empty or unknown")
 	})
 
+	t.Run("allows unset only as a source", func(t *testing.T) {
+		for _, platform := range []string{PlatformOpenAI, PlatformComposite, PlatformAnthropic} {
+			got, err := NormalizeReasoningEffortMappings(platform, []ReasoningEffortMapping{{From: " UNSET ", To: "high"}})
+			require.NoError(t, err)
+			require.Equal(t, []ReasoningEffortMapping{{From: "unset", To: "high"}}, got)
+		}
+		_, err := NormalizeReasoningEffortMappings(PlatformOpenAI, []ReasoningEffortMapping{{From: "low", To: "unset"}})
+		require.ErrorContains(t, err, "empty or unknown")
+	})
+
 	t.Run("allows none only as a source for OpenAI routes", func(t *testing.T) {
 		for _, platform := range []string{PlatformOpenAI, PlatformComposite} {
 			got, err := NormalizeReasoningEffortMappings(platform, []ReasoningEffortMapping{{From: " NONE ", To: "low"}})
@@ -292,6 +302,15 @@ func TestApplyOpenAIReasoningEffortPolicy(t *testing.T) {
 		{name: "Anthropic output config caps max", body: `{"output_config":{"effort":"max"}}`, max: "xhigh", path: "output_config.effort", want: "xhigh", changed: true},
 		{name: "Anthropic output config maps before cap", body: `{"output_config":{"effort":"max"}}`, max: "high", mappings: []ReasoningEffortMapping{{From: "max", To: "xhigh"}}, path: "output_config.effort", want: "high", changed: true},
 		{name: "does not raise omitted", body: `{"model":"gpt-5"}`, max: "low", path: "reasoning_effort", want: "", changed: false},
+		{name: "unset fills omitted chat effort", body: `{"model":"deep"}`, mappings: []ReasoningEffortMapping{{From: "unset", To: "high", MatchType: domain.ReasoningEffortMatchExact, Model: "deep"}}, path: "reasoning_effort", want: "high", changed: true},
+		{name: "unset skips another model", body: `{"model":"other"}`, mappings: []ReasoningEffortMapping{{From: "unset", To: "high", MatchType: domain.ReasoningEffortMatchExact, Model: "deep"}}, path: "reasoning_effort", want: "", changed: false},
+		{name: "unset fills responses effort", body: `{"model":"deep","input":"hi"}`, mappings: []ReasoningEffortMapping{{From: "unset", To: "high"}}, path: "reasoning.effort", want: "high", changed: true},
+		{name: "unset fills empty effort", body: `{"model":"deep","reasoning_effort":""}`, mappings: []ReasoningEffortMapping{{From: "unset", To: "high"}}, path: "reasoning_effort", want: "high", changed: true},
+		{name: "unset fills null effort", body: `{"model":"deep","reasoning_effort":null}`, mappings: []ReasoningEffortMapping{{From: "unset", To: "high"}}, path: "reasoning_effort", want: "high", changed: true},
+		{name: "unset fills anthropic output config", body: `{"model":"claude","output_config":{}}`, mappings: []ReasoningEffortMapping{{From: "unset", To: "high"}}, path: "output_config.effort", want: "high", changed: true},
+		{name: "unset does not replace explicit none", body: `{"model":"deep","reasoning_effort":"none"}`, mappings: []ReasoningEffortMapping{{From: "unset", To: "high"}, {From: "none", To: "low"}}, path: "reasoning_effort", want: "low", changed: true},
+		{name: "unset respects ceiling", body: `{"model":"deep"}`, max: "low", mappings: []ReasoningEffortMapping{{From: "unset", To: "max"}}, path: "reasoning_effort", want: "low", changed: true},
+		{name: "unset keeps non string value", body: `{"reasoning_effort":{"level":"high"}}`, mappings: []ReasoningEffortMapping{{From: "unset", To: "low"}}, path: "reasoning_effort.level", want: "high", changed: false},
 		{name: "keeps lower value", body: `{"reasoning_effort":"low"}`, max: "high", path: "reasoning_effort", want: "low", changed: false},
 		{name: "normalizes request alias", body: `{"reasoning_effort":"x-high"}`, max: "xhigh", path: "reasoning_effort", want: "xhigh", changed: true},
 		{name: "caps max below its distinct rank", body: `{"reasoning_effort":"max"}`, max: "xhigh", path: "reasoning_effort", want: "xhigh", changed: true},

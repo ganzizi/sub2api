@@ -219,6 +219,7 @@ import {
   reasoningEffortOptionsForPlatform,
   reasoningEffortSourceOptionsForPlatform,
   reasoningEffortTargetOptionsForPlatform,
+  reasoningEffortUnsetSource,
   reasoningEffortMappingDeny,
   reasoningEffortOverLimitDeny,
   reasoningEffortOverLimitDowngrade,
@@ -247,7 +248,14 @@ const reasoningEffortOptions = computed(() =>
   reasoningEffortOptionsForPlatform(props.platform),
 );
 const reasoningEffortSourceOptions = computed(() =>
-  reasoningEffortSourceOptionsForPlatform(props.platform),
+  reasoningEffortSourceOptionsForPlatform(props.platform).map((option) =>
+    option.value === reasoningEffortUnsetSource
+      ? {
+          ...option,
+          label: t("admin.groups.form.reasoningEffortFromUnset"),
+        }
+      : option,
+  ),
 );
 const reasoningEffortTargetOptions = computed(() =>
   reasoningEffortTargetOptionsForPlatform(props.platform).map((option) =>

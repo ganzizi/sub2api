@@ -23,16 +23,20 @@ const (
 	// ReasoningEffortMappingDeny is a mapping target that rejects the request
 	// when the matching source reasoning effort is present.
 	ReasoningEffortMappingDeny = "deny"
+	// ReasoningEffortMappingUnset matches a request that did not carry an effort.
+	ReasoningEffortMappingUnset = "unset"
 )
 
 var openAIReasoningEffortValues = []string{"minimal", "low", "medium", "high", "xhigh", "max"}
 var anthropicReasoningEffortValues = []string{"low", "medium", "high", "xhigh", "max"}
 
 func normalizeReasoningEffortMappingSource(raw string) string {
-	if strings.EqualFold(strings.TrimSpace(raw), "none") {
-		return "none"
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "none", ReasoningEffortMappingUnset:
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return NormalizeMaxReasoningEffort(raw)
 	}
-	return NormalizeMaxReasoningEffort(raw)
 }
 
 func normalizeReasoningEffortMappingTarget(raw string) string {
@@ -351,7 +355,7 @@ func NormalizeReasoningEffortMappings(platform string, raw []ReasoningEffortMapp
 		if len(from) > maxReasoningEffortValueLen || len(to) > maxReasoningEffortValueLen {
 			return nil, fmt.Errorf("reasoning effort mapping %d values cannot exceed %d characters", i+1, maxReasoningEffortValueLen)
 		}
-		if from != "none" {
+		if from != "none" && from != ReasoningEffortMappingUnset {
 			if _, err := normalizeMaxReasoningEffortForPlatform(platform, from); err != nil {
 				return nil, fmt.Errorf("reasoning effort mapping %d source: %w", i+1, err)
 			}
@@ -496,9 +500,9 @@ func sanitizeGroupReasoningEffortPolicy(group *Group) {
 // the request model by exact name, prefix, or suffix) and then either caps
 // known effort levels or rejects the request when the group is configured to
 // deny values above the ceiling. A mapping whose target is deny rejects the
-// request when that source value is present. Omitted values remain untouched
-// so upstream defaults stay in control. It understands both OpenAI and
-// Anthropic request field shapes.
+// request when that source value is present. Omitted values stay omitted unless
+// the group has an unset mapping for the request model. It understands both
+// OpenAI and Anthropic request field shapes.
 func ApplyReasoningEffortPolicy(body []byte, maxEffort string, mappings []ReasoningEffortMapping, overLimit string) ([]byte, bool, error) {
 	maxRank, hasMax := reasoningEffortRank(maxEffort)
 	if len(body) == 0 || (!hasMax && len(mappings) == 0) {
@@ -510,7 +514,7 @@ func ApplyReasoningEffortPolicy(body []byte, maxEffort string, mappings []Reason
 	requestModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
 	result := body
 	changed := false
-	for _, path := range []string{"reasoning.effort", "reasoning_effort", "output_config.effort"} {
+	for _, path := range reasoningEffortFieldPaths {
 		field := gjson.GetBytes(result, path)
 		if !field.Exists() || field.Type != gjson.String {
 			continue
@@ -519,36 +523,88 @@ func ApplyReasoningEffortPolicy(body []byte, maxEffort string, mappings []Reason
 		if original == "" {
 			continue
 		}
-
-		effective, mapped := mapReasoningEffort(original, mappings, requestModel)
-		if mapped && isReasoningEffortMappingDeny(effective) {
-			requested := normalizeReasoningEffortMappingSource(original)
-			if requested == "" {
-				requested = original
-			}
-			return body, false, &ReasoningEffortMappingDeniedError{Requested: requested}
+		effective, rewrite, err := resolveMappedReasoningEffort(original, mappings, requestModel, hasMax, maxRank, deny, canonicalMax)
+		if err != nil {
+			return body, false, err
 		}
-		if currentRank, recognized := reasoningEffortRank(effective); recognized {
-			effective = NormalizeMaxReasoningEffort(effective)
-			if hasMax && currentRank > maxRank {
-				if deny {
-					return body, false, &ReasoningEffortOverLimitError{Requested: effective, Max: canonicalMax}
-				}
-				effective = canonicalMax
-			}
-		}
-		if effective == original {
+		if !rewrite {
 			continue
 		}
-
-		updated, err := sjson.SetBytes(result, path, effective)
-		if err != nil {
+		updated, setErr := sjson.SetBytes(result, path, effective)
+		if setErr != nil {
 			continue
 		}
 		result = updated
 		changed = true
 	}
+	if !changed {
+		if path, ok := omittedReasoningEffortPath(body); ok {
+			effective, rewrite, err := resolveMappedReasoningEffort(ReasoningEffortMappingUnset, mappings, requestModel, hasMax, maxRank, deny, canonicalMax)
+			if err != nil {
+				return body, false, err
+			}
+			if rewrite {
+				updated, setErr := sjson.SetBytes(result, path, effective)
+				if setErr == nil {
+					result = updated
+					changed = true
+				}
+			}
+		}
+	}
 	return result, changed, nil
+}
+
+var reasoningEffortFieldPaths = []string{"reasoning.effort", "reasoning_effort", "output_config.effort"}
+
+func resolveMappedReasoningEffort(original string, mappings []ReasoningEffortMapping, requestModel string, hasMax bool, maxRank int, deny bool, canonicalMax string) (string, bool, error) {
+	effective, mapped := mapReasoningEffort(original, mappings, requestModel)
+	if mapped && isReasoningEffortMappingDeny(effective) {
+		requested := normalizeReasoningEffortMappingSource(original)
+		if requested == "" {
+			requested = original
+		}
+		return "", false, &ReasoningEffortMappingDeniedError{Requested: requested}
+	}
+	if currentRank, recognized := reasoningEffortRank(effective); recognized {
+		effective = NormalizeMaxReasoningEffort(effective)
+		if hasMax && currentRank > maxRank {
+			if deny {
+				return "", false, &ReasoningEffortOverLimitError{Requested: effective, Max: canonicalMax}
+			}
+			effective = canonicalMax
+		}
+	}
+	effective = strings.TrimSpace(effective)
+	return effective, effective != strings.TrimSpace(original), nil
+}
+
+// omittedReasoningEffortPath reports where to write an unset mapping. A present
+// non-empty or non-string effort is left to the normal mapping loop.
+func omittedReasoningEffortPath(body []byte) (string, bool) {
+	emptyPath := ""
+	for _, path := range reasoningEffortFieldPaths {
+		field := gjson.GetBytes(body, path)
+		if !field.Exists() || field.Type == gjson.Null {
+			continue
+		}
+		if field.Type != gjson.String || strings.TrimSpace(field.String()) != "" {
+			return "", false
+		}
+		if emptyPath == "" {
+			emptyPath = path
+		}
+	}
+	if emptyPath != "" {
+		return emptyPath, true
+	}
+	if gjson.GetBytes(body, "output_config").Exists() {
+		return "output_config.effort", true
+	}
+	if gjson.GetBytes(body, "input").Exists() && !gjson.GetBytes(body, "messages").Exists() {
+		return "reasoning.effort", true
+	}
+	return "reasoning_effort", true
 }
 
 func applyOpenAIWSReasoningEffortPolicy(payload []byte, hooks *OpenAIWSIngressHooks) ([]byte, error) {

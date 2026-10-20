@@ -40,7 +40,7 @@ describe("groupsReasoningEffort", () => {
         reasoningEffortSourceOptionsForPlatform(platform).map(
           (option) => option.value,
         ),
-      ).toEqual(["none", ...expected]);
+      ).toEqual(["unset", "none", ...expected]);
       expect(
         reasoningEffortTargetOptionsForPlatform(platform).map(
           (option) => option.value,
@@ -81,6 +81,21 @@ describe("groupsReasoningEffort", () => {
     expect(reasoningEffortMappingsToAPI(rows)).toEqual([
       { from: "max", to: "xhigh" },
     ]);
+  });
+
+  it("hydrates unset only as a mapping source", () => {
+    const rows = reasoningEffortMappingsToRows(
+      [{ from: " UNSET ", to: "high" }],
+      "openai",
+    );
+
+    expect(rows[0]?.pairs[0]).toMatchObject({ from: "unset", to: "high" });
+    expect(normalizeReasoningEffortSourceForPlatform("openai", "unset")).toBe(
+      "unset",
+    );
+    expect(normalizeReasoningEffortTargetForPlatform("openai", "unset")).toBe(
+      "",
+    );
   });
 
   it("hydrates and validates none only as a mapping source", () => {

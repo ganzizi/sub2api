@@ -12,7 +12,10 @@ const openAIReasoningEffortValues = [
   "xhigh",
   "max",
 ] as const;
+export const reasoningEffortUnsetSource = "unset";
+
 const openAIReasoningEffortSourceValues = [
+  reasoningEffortUnsetSource,
   "none",
   ...openAIReasoningEffortValues,
 ] as const;
@@ -94,10 +97,13 @@ export function normalizeReasoningEffortSourceForPlatform(
   value: string | null | undefined,
 ): string {
   const normalized = value?.trim().toLowerCase() ?? "";
-  return supportsReasoningEffortPolicyPlatform(platform) &&
-    normalized === "none"
-    ? "none"
-    : normalizeReasoningEffortForPlatform(platform, value);
+  if (
+    supportsReasoningEffortPolicyPlatform(platform) &&
+    (normalized === "none" || normalized === reasoningEffortUnsetSource)
+  ) {
+    return normalized;
+  }
+  return normalizeReasoningEffortForPlatform(platform, value);
 }
 
 export function normalizeReasoningEffortTargetForPlatform(
