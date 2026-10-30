@@ -1,8 +1,9 @@
+# 上海时间每天 01:40 合并一次。有新提交才发布镜像。服务器 05:27 拉取。
 name: sync-upstream
 
 on:
   schedule:
-    - cron: "23 * * * *"
+    - cron: "40 17 * * *"
   workflow_dispatch:
 
 permissions:
