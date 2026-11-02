@@ -9,7 +9,8 @@ permissions:
 
 jobs:
   shell:
-    runs-on: macos-15
+    # macOS 托管 runner 排队失败会取消整个 CI。这些脚本检查已可在 Linux 上运行。
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - name: Check deployment scripts

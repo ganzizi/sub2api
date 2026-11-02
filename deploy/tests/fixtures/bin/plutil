@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+# 测试夹具：只覆盖 apple-container 检查用到的 JSON extract，避免依赖 macOS plutil。
+import json
+import sys
+
+
+def extract(node, path):
+    for part in path.split("."):
+        if part.isdigit():
+            node = node[int(part)]
+        else:
+            node = node[part]
+    return node
+
+
+def main(argv):
+    if len(argv) != 7 or argv[1] != "-extract" or argv[4] != "-o" or argv[5] != "-" or argv[6] != "-":
+        sys.stderr.write("unsupported plutil invocation\n")
+        return 2
+    value = extract(json.load(sys.stdin), argv[2])
+    if argv[3] == "json":
+        sys.stdout.write(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+        return 0
+    if argv[3] == "raw":
+        if isinstance(value, str):
+            text = value
+        elif isinstance(value, bool):
+            text = "true" if value else "false"
+        else:
+            text = str(value)
+        sys.stdout.write(text + "\n")
+        return 0
+    sys.stderr.write("unsupported plutil format\n")
+    return 2
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main(sys.argv))
+    except Exception as exc:
+        sys.stderr.write(f"{exc}\n")
+        raise SystemExit(1)
